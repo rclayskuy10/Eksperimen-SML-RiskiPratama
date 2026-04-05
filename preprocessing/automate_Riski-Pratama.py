@@ -1,26 +1,47 @@
 """
-Automate Preprocessing - Iris Dataset
+Automate Preprocessing - Covertype Dataset
 Nama: Riski Pratama
 Script ini mengotomatisasi seluruh tahapan preprocessing yang dilakukan
-pada notebook eksperimen.
+pada notebook eksperimen. Dataset: Forest Covertype (sklearn).
 """
 
 import pandas as pd
 import numpy as np
-from sklearn.datasets import load_iris
+from sklearn.datasets import fetch_covtype
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.utils import resample
 import os
 import argparse
 
 
-def load_data():
-    """Load dataset Iris dari sklearn."""
-    iris = load_iris()
-    df = pd.DataFrame(data=iris.data, columns=iris.feature_names)
-    df['target'] = iris.target
-    print(f"[INFO] Dataset loaded: {df.shape}")
-    return df, iris.feature_names
+# 10 fitur kontinu pada Covertype
+CONTINUOUS_FEATURES = [
+    'Elevation', 'Aspect', 'Slope',
+    'Horizontal_Distance_To_Hydrology', 'Vertical_Distance_To_Hydrology',
+    'Horizontal_Distance_To_Roadways', 'Hillshade_9am',
+    'Hillshade_Noon', 'Hillshade_3pm',
+    'Horizontal_Distance_To_Fire_Points'
+]
+
+
+def load_data(n_samples=10000, random_state=42):
+    """Load dataset Covertype dari sklearn dan subsample."""
+    print("[INFO] Downloading/loading Covertype dataset...")
+    covtype = fetch_covtype(as_frame=True)
+    df_full = covtype.frame.copy()
+    target_col = df_full.columns[-1]
+    df_full = df_full.rename(columns={target_col: 'target'})
+    print(f"[INFO] Full dataset: {df_full.shape}")
+
+    # Subsample untuk efisiensi
+    df = resample(df_full, n_samples=n_samples, random_state=random_state,
+                  stratify=df_full['target'])
+    df = df.reset_index(drop=True)
+    print(f"[INFO] Subsampled dataset: {df.shape}")
+
+    feature_names = [c for c in df.columns if c != 'target']
+    return df, feature_names
 
 
 def remove_duplicates(df):
@@ -33,9 +54,10 @@ def remove_duplicates(df):
 
 
 def detect_outliers(df, feature_names):
-    """Deteksi outlier menggunakan metode IQR."""
-    print("[INFO] Deteksi outlier (IQR method):")
-    for col in feature_names:
+    """Deteksi outlier menggunakan metode IQR (hanya fitur kontinu)."""
+    print("[INFO] Deteksi outlier (IQR method) - fitur kontinu:")
+    continuous = [f for f in feature_names if f in CONTINUOUS_FEATURES]
+    for col in continuous:
         Q1 = df[col].quantile(0.25)
         Q3 = df[col].quantile(0.75)
         IQR = Q3 - Q1
@@ -77,8 +99,8 @@ def save_preprocessed(X_train_scaled, X_test_scaled, y_train, y_test,
     test_df = pd.DataFrame(X_test_scaled, columns=feature_names)
     test_df['target'] = y_test.values
 
-    train_path = os.path.join(output_dir, 'iris_train_preprocessed.csv')
-    test_path = os.path.join(output_dir, 'iris_test_preprocessed.csv')
+    train_path = os.path.join(output_dir, 'covtype_train_preprocessed.csv')
+    test_path = os.path.join(output_dir, 'covtype_test_preprocessed.csv')
 
     train_df.to_csv(train_path, index=False)
     test_df.to_csv(test_path, index=False)
@@ -89,43 +111,38 @@ def save_preprocessed(X_train_scaled, X_test_scaled, y_train, y_test,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Automate Iris Preprocessing')
+    parser = argparse.ArgumentParser(description='Automate Covertype Preprocessing')
     parser.add_argument('--output-dir', type=str,
-                        default='iris_preprocessing',
+                        default='covtype_preprocessing',
                         help='Direktori output untuk data preprocessing')
     parser.add_argument('--test-size', type=float, default=0.2,
                         help='Proporsi test set (default: 0.2)')
     parser.add_argument('--random-state', type=int, default=42,
                         help='Random state (default: 42)')
+    parser.add_argument('--n-samples', type=int, default=10000,
+                        help='Jumlah sampel yang diambil (default: 10000)')
     args = parser.parse_args()
 
     print("=" * 60)
-    print("AUTOMATE PREPROCESSING - IRIS DATASET")
+    print("AUTOMATE PREPROCESSING - COVERTYPE DATASET")
     print("Nama: Riski Pratama")
     print("=" * 60)
 
-    # 1. Load data
-    df, feature_names = load_data()
-
-    # 2. Hapus duplikat
+    df, feature_names = load_data(n_samples=args.n_samples,
+                                  random_state=args.random_state)
     df_clean = remove_duplicates(df)
-
-    # 3. Deteksi outlier
     df_clean = detect_outliers(df_clean, feature_names)
 
-    # 4. Split data
     X_train, X_test, y_train, y_test = split_data(
         df_clean, feature_names,
         test_size=args.test_size,
         random_state=args.random_state
     )
 
-    # 5. Standarisasi
     X_train_scaled, X_test_scaled, scaler = scale_features(
         X_train, X_test, feature_names
     )
 
-    # 6. Simpan hasil
     save_preprocessed(
         X_train_scaled, X_test_scaled, y_train, y_test,
         feature_names, args.output_dir
